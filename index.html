@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>HR Overlay</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: transparent;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 16px;
+            display: flex;
+        }
+
+        /* ── Zone-personality card animations ── */
+        @keyframes breathe {
+            0%,100% { transform: scale(1); }
+            50%      { transform: scale(1.0045); }
+        }
+        @keyframes surge {
+            0%   { transform: translate(0,0) rotate(0deg); }
+            20%  { transform: translate(-0.7px,0.5px) rotate(-0.04deg); }
+            50%  { transform: translate(0.7px,-0.5px) rotate(0.04deg); }
+            80%  { transform: translate(-0.4px,-0.6px) rotate(-0.02deg); }
+            100% { transform: translate(0,0) rotate(0deg); }
+        }
+
+        #card {
+            position: relative;
+            width: 312px;
+            background: rgba(9, 10, 15, 0.90);
+            border-radius: 18px;
+            padding: 13px 15px 12px;
+            border: 1px solid rgba(255,255,255,0.06);
+            overflow: hidden;
+            transform-origin: center;
+            transition: box-shadow 0.8s ease, border-color 0.8s ease;
+        }
+        #card.z-rest { animation: breathe 5.5s ease-in-out infinite; }
+        #card.z-easy { animation: breathe 4.2s ease-in-out infinite; }
+        #card.z-hard { animation: breathe 1.8s ease-in-out infinite; }
+        #card.z-max  { animation: surge 0.22s linear infinite; }
+
+        /* ── Zone flash overlay ── */
+        #zone-flash {
+            position: absolute; inset: 0; border-radius: 18px;
+            pointer-events: none; z-index: 30; opacity: 0;
+            transition: opacity 0.45s ease-out;
+        }
+
+        /* ── Top row ── */
+        .top-row {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 10px;
+        }
+        .top-left { display: flex; align-items: center; gap: 7px; }
+        #zone-indicator {
+            width: 6px; height: 6px; border-radius: 50%;
+            transition: background 0.6s ease; flex-shrink: 0;
+        }
+        #zone-name {
+            font-size: 9.5px; font-weight: 700; letter-spacing: 2.8px;
+            text-transform: uppercase; transition: color 0.6s ease;
+            color: rgba(255,255,255,0.5);
+        }
+        .top-right { display: flex; align-items: center; gap: 9px; }
+        #trend-arrow {
+            font-size: 13px; font-weight: 700;
+            transition: color 0.4s; color: rgba(255,255,255,0.28);
+        }
+        #zone-timer {
+            font-size: 10px; color: rgba(255,255,255,0.28);
+            font-variant-numeric: tabular-nums; letter-spacing: 0.5px;
+        }
+
+        /* ── Heart + BPM row ── */
+        .hr-row {
+            display: flex; align-items: center; gap: 11px; margin-bottom: 11px;
+        }
+        #heart-wrap {
+            flex-shrink: 0; position: relative;
+            width: 56px; height: 56px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        #heart-svg {
+            width: 56px; height: 56px;
+            transform-origin: center; will-change: transform;
+            transition: color 0.6s ease;
+            color: rgba(255,255,255,0.3);
+        }
+        /* Expanding ring on each beat */
+        #beat-ring {
+            position: absolute; inset: -6px; border-radius: 50%;
+            border: 1.5px solid currentColor; opacity: 0;
+            transition: color 0.6s; pointer-events: none;
+        }
+        @keyframes ringOut {
+            0%   { transform: scale(0.65); opacity: 0.85; }
+            100% { transform: scale(1.7);  opacity: 0; }
+        }
+        #beat-ring.pulse { animation: ringOut 0.65s ease-out forwards; }
+
+        .bpm-section { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        #bpm-value {
+            font-size: 76px; font-weight: 900; line-height: 0.92;
+            font-variant-numeric: tabular-nums; letter-spacing: -2px;
+            transition: color 0.6s ease; color: rgba(255,255,255,0.6);
+        }
+        .bpm-meta {
+            display: flex; align-items: center; gap: 7px; margin-top: 3px;
+        }
+        .bpm-unit {
+            font-size: 9px; color: rgba(255,255,255,0.28);
+            letter-spacing: 2px; text-transform: uppercase;
+        }
+        #hrv-tag {
+            font-size: 9px; color: rgba(255,255,255,0.22);
+            letter-spacing: 0.5px; font-variant-numeric: tabular-nums;
+        }
+
+        /* ── ECG container ── */
+        .ecg-wrap {
+            position: relative; height: 88px; border-radius: 8px;
+            background: rgba(0,0,0,0.52); overflow: hidden;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.038) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.038) 1px, transparent 1px);
+            background-size: 13px 13px;
+            box-shadow: inset 0 2px 14px rgba(0,0,0,0.75);
+        }
+        #ecgCanvas { position: absolute; top:0;left:0;width:100%;height:100%; }
+        .ecg-fade-l {
+            position: absolute; top:0;left:0;width:22%;height:100%; z-index:2;
+            background: linear-gradient(90deg,rgba(0,0,0,0.93) 0%,transparent 100%);
+            pointer-events: none;
+        }
+        .ecg-fade-r {
+            position: absolute; top:0;right:0;width:5%;height:100%; z-index:2;
+            background: linear-gradient(270deg,rgba(0,0,0,0.55) 0%,transparent 100%);
+            pointer-events: none;
+        }
+
+        /* ── Bottom row ── */
+        .bottom-row {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-top: 9px;
+        }
+        .zdots { display: flex; gap: 3px; align-items: center; }
+        .zdot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: rgba(255,255,255,0.08);
+            transition: background 0.5s, opacity 0.5s, transform 0.3s;
+            flex-shrink: 0;
+        }
+        .zdot.on  { opacity: 0.65; }
+        .zdot.cur { opacity: 1; transform: scale(1.5); }
+        .load-group { display: flex; align-items: center; gap: 5px; }
+        .load-lbl {
+            font-size: 9px; color: rgba(255,255,255,0.22);
+            letter-spacing: 1.5px; text-transform: uppercase;
+        }
+        #load-track {
+            width: 52px; height: 3px; border-radius: 2px;
+            background: rgba(255,255,255,0.07); overflow: hidden;
+        }
+        #load-fill {
+            height: 100%; border-radius: 2px; width: 0%;
+            transition: width 1s ease, background 0.8s ease;
+        }
+
+        /* ── Canvas overlays ── */
+        #borderCanvas {
+            position: absolute; top:0;left:0;width:100%;height:100%;
+            pointer-events: none; z-index: 5; border-radius: 18px;
+        }
+        #particleCanvas {
+            position: absolute; top:0;left:0;width:100%;height:100%;
+            pointer-events: none; z-index: 16;
+        }
+    </style>
+</head>
+<body>
+<div id="card">
+    <canvas id="borderCanvas"></canvas>
+    <canvas id="particleCanvas"></canvas>
+    <div id="zone-flash"></div>
+
+    <div class="top-row">
+        <div class="top-left">
+            <div id="zone-indicator"></div>
+            <span id="zone-name">CONNECTING</span>
+        </div>
+        <div class="top-right">
+            <span id="trend-arrow">—</span>
+            <span id="zone-timer">0:00</span>
+        </div>
+    </div>
+
+    <div class="hr-row">
+        <div id="heart-wrap">
+            <div id="beat-ring"></div>
+            <svg id="heart-svg" viewBox="0 0 100 92" fill="currentColor">
+                <path d="M50 85 C50 85 6 53 6 27 C6 13 16 5 28 5 C37 5 45 10 50 19 C55 10 63 5 72 5 C84 5 94 13 94 27 C94 53 50 85 50 85Z"/>
+            </svg>
+        </div>
+        <div class="bpm-section">
+            <div id="bpm-value">--</div>
+            <div class="bpm-meta">
+                <span class="bpm-unit">BPM</span>
+                <span id="hrv-tag">·  -- ms HRV</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="ecg-wrap">
+        <canvas id="ecgCanvas" width="1200" height="220"></canvas>
+        <div class="ecg-fade-l"></div>
+        <div class="ecg-fade-r"></div>
+    </div>
+
+    <div class="bottom-row">
+        <div class="zdots" id="zdots"></div>
+        <div class="load-group">
+            <span class="load-lbl">Load</span>
+            <div id="load-track"><div id="load-fill"></div></div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════ */
+const RENDER_DELAY = 1500;
+const ECG_WINDOW   = 4200;
+const ECG_SCALE    = 3.05;
+
+const ZONES = [
+    { min:0,   max:60,  id:'rest', label:'RESTING',  rgb:[75,185,255],  load:5   },
+    { min:60,  max:90,  id:'easy', label:'EASY',     rgb:[0,215,255],   load:20  },
+    { min:90,  max:120, id:'fat',  label:'FAT BURN', rgb:[0,255,130],   load:44  },
+    { min:120, max:140, id:'crd',  label:'CARDIO',   rgb:[255,215,0],   load:65  },
+    { min:140, max:160, id:'hard', label:'HARD',     rgb:[255,78,0],    load:83  },
+    { min:160, max:999, id:'max',  label:'\u26a1 MAX',rgb:[255,0,50],   load:100 },
+];
+const ZONE_ANIMS = { rest:'z-rest', easy:'z-easy', hard:'z-hard', max:'z-max' };
+const DOT_COUNT = 10;
+
+/* ═══════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════ */
+let beats      = [];
+let bpmHist    = [];
+let zoneHist   = [];
+let curZoneIdx = 1;
+let zoneStart  = Date.now();
+let displayRgb = [0,215,255];
+let targetRgb  = [0,215,255];
+let sweeps     = [];
+let particles  = [];
+let hrtTimes   = [];
+
+/* ═══════════════════════════════════════════
+   DOM REFS
+═══════════════════════════════════════════ */
+const card       = document.getElementById('card');
+const ecgC       = document.getElementById('ecgCanvas');
+const ecgX       = ecgC.getContext('2d');
+const bC         = document.getElementById('borderCanvas');
+const bX         = bC.getContext('2d');
+const pC         = document.getElementById('particleCanvas');
+const pX         = pC.getContext('2d');
+const bpmEl      = document.getElementById('bpm-value');
+const zoneNameEl = document.getElementById('zone-name');
+const zoneDotEl  = document.getElementById('zone-indicator');
+const timerEl    = document.getElementById('zone-timer');
+const trendEl    = document.getElementById('trend-arrow');
+const hrvEl      = document.getElementById('hrv-tag');
+const heartEl    = document.getElementById('heart-svg');
+const ringEl     = document.getElementById('beat-ring');
+const flashEl    = document.getElementById('zone-flash');
+const loadFill   = document.getElementById('load-fill');
+const zdotsEl    = document.getElementById('zdots');
+
+/* roundRect polyfill for older Chromium builds */
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r) {
+        const R = Math.min(r, w/2, h/2);
+        this.moveTo(x+R,y);
+        this.lineTo(x+w-R,y); this.arcTo(x+w,y,x+w,y+R,R);
+        this.lineTo(x+w,y+h-R); this.arcTo(x+w,y+h,x+w-R,y+h,R);
+        this.lineTo(x+R,y+h); this.arcTo(x,y+h,x,y+h-R,R);
+        this.lineTo(x,y+R); this.arcTo(x,y,x+R,y,R);
+        this.closePath();
+    };
+}
+
+/* ═══════════════════════════════════════════
+   CANVAS SIZING
+═══════════════════════════════════════════ */
+function resize() {
+    bC.width  = pC.width  = card.offsetWidth;
+    bC.height = pC.height = card.offsetHeight;
+}
+window.addEventListener('resize', resize);
+setTimeout(resize, 80);
+
+/* ═══════════════════════════════════════════
+   ZONE DOTS
+═══════════════════════════════════════════ */
+for (let i = 0; i < DOT_COUNT; i++) {
+    const d = document.createElement('div');
+    d.className = 'zdot'; d.id = 'zd' + i;
+    zdotsEl.appendChild(d);
+}
+function refreshDots() {
+    for (let i = 0; i < DOT_COUNT; i++) {
+        const d   = document.getElementById('zd' + i);
+        const hi  = zoneHist.length - DOT_COUNT + i;
+        const cur = hi === zoneHist.length - 1;
+        if (hi >= 0) {
+            const [r,g,b] = ZONES[zoneHist[hi]].rgb;
+            d.style.background = 'rgb(' + r + ',' + g + ',' + b + ')';
+            d.className = 'zdot on' + (cur ? ' cur' : '');
+        } else {
+            d.style.background = 'rgba(255,255,255,0.08)';
+            d.className = 'zdot';
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════
+   COLOR HELPERS
+═══════════════════════════════════════════ */
+function lerpRgb(from, to, t) { return from.map((v,i) => v + (to[i]-v)*t); }
+function toRgb(c, a) {
+    const [r,g,b] = c.map(Math.round);
+    return a == null ? 'rgb('+r+','+g+','+b+')' : 'rgba('+r+','+g+','+b+','+a+')';
+}
+function interpolateZoneColor(bpm) {
+    for (let i = ZONES.length - 2; i >= 0; i--) {
+        if (bpm >= ZONES[i].min) {
+            const lo = ZONES[i], hi = ZONES[i+1];
+            const t  = Math.max(0, Math.min(1, (bpm - lo.min) / (hi.min - lo.min)));
+            return lo.rgb.map((v,j) => v + (hi.rgb[j]-v)*t);
+        }
+    }
+    return ZONES[0].rgb.slice();
+}
+function getZoneIdx(bpm) {
+    for (let i = ZONES.length-1; i >= 0; i--) if (bpm >= ZONES[i].min) return i;
+    return 0;
+}
+
+/* ═══════════════════════════════════════════
+   BEAT MORPHOLOGY
+═══════════════════════════════════════════ */
+function rv(base, spread) { return base * (1 + (Math.random() - 0.5) * spread); }
+function makeBeat() {
+    return { q: rv(5,0.28), r: rv(40,0.22), s: rv(11,0.32), tA: rv(9.5,0.28), tW: rv(74,0.22) };
+}
+
+/* ═══════════════════════════════════════════
+   PARTICLES
+═══════════════════════════════════════════ */
+function Particle(x, y, col) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 1.6 + Math.random() * 3.4;
+    this.x = x; this.y = y;
+    this.vx = Math.cos(ang)*spd; this.vy = Math.sin(ang)*spd;
+    this.radius = 1.2 + Math.random()*2.0;
+    this.life   = 1.0;
+    this.decay  = 0.019 + Math.random()*0.017;
+    this.col    = col;
+}
+Particle.prototype.tick = function() {
+    this.x += this.vx; this.y += this.vy;
+    this.vy += 0.045; this.vx *= 0.972; this.vy *= 0.98;
+    this.life -= this.decay;
+};
+Particle.prototype.draw = function(ctx) {
+    ctx.globalAlpha = Math.max(0, this.life) * 0.88;
+    ctx.fillStyle   = this.col;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill();
+};
+function burst(x, y, col, n) {
+    n = n || 12;
+    for (let i = 0; i < n; i++) particles.push(new Particle(x, y, col));
+}
+
+/* ═══════════════════════════════════════════
+   BORDER SWEEP
+═══════════════════════════════════════════ */
+function emitSweep(col) { sweeps.push({ t: Date.now(), col: col }); }
+
+function drawSweeps() {
+    var w = bC.width, h = bC.height;
+    bX.clearRect(0, 0, w, h);
+    if (!w || !h) return;
+    var r     = 18;
+    var perim = 2*(w-2*r) + 2*(h-2*r) + 2*Math.PI*r;
+    var arcL  = perim * 0.17;
+    var now   = Date.now();
+    sweeps = sweeps.filter(function(s){ return now - s.t < 1000; });
+    for (var i = 0; i < sweeps.length; i++) {
+        var sw   = sweeps[i];
+        var p    = Math.min((now - sw.t) / 900, 1.05);
+        var fade = p < 0.55 ? 1 : 1 - (p - 0.55) / 0.45;
+        bX.save();
+        bX.strokeStyle = sw.col;
+        bX.lineWidth   = 1.8;
+        bX.shadowBlur  = 12; bX.shadowColor = sw.col;
+        bX.globalAlpha = fade * 0.92;
+        bX.setLineDash([arcL, perim]);
+        bX.lineDashOffset = -p * perim;
+        bX.beginPath(); bX.roundRect(1, 1, w-2, h-2, r); bX.stroke();
+        bX.restore();
+    }
+}
+
+/* ═══════════════════════════════════════════
+   HEART SCALE  (dual-thump)
+═══════════════════════════════════════════ */
+function heartScale(now) {
+    var sc = 1;
+    for (var i = 0; i < hrtTimes.length; i++) {
+        var dt = now - hrtTimes[i];
+        if (dt < 0 || dt > 750) continue;
+        var p1 = dt < 110 ? 1 + 0.30 * Math.sin(Math.PI * dt / 110) : 1;
+        var p2 = (dt > 135 && dt < 270) ? 1 + 0.16 * Math.sin(Math.PI * (dt-135) / 135) : 1;
+        if (p1 > sc) sc = p1;
+        if (p2 > sc) sc = p2;
+    }
+    return sc;
+}
+
+/* ═══════════════════════════════════════════
+   ECG
+═══════════════════════════════════════════ */
+function drawECG(playhead) {
+    var W      = ecgC.width, H = ecgC.height;
+    var startT = playhead - ECG_WINDOW;
+    var toX    = function(t){ return ((t - startT) / ECG_WINDOW) * W; };
+    var wander = function(t){ return Math.sin(t*0.00062)*4.2 + Math.sin(t*0.00107)*1.8; };
+    var baseY  = function(t){ return H/2 + wander(t); };
+    var noise  = function(){ return (Math.random()-0.5)*1.35; };
+
+    var cr = Math.round(displayRgb[0]);
+    var cg = Math.round(displayRgb[1]);
+    var cb = Math.round(displayRgb[2]);
+
+    var relBeats = [];
+    for (var bi = 0; bi < beats.length; bi++) {
+        var bt = beats[bi];
+        if (bt.time > startT - 500 && bt.time < playhead) relBeats.push(bt);
+    }
+
+    function trace(ph, alpha, lw, addNoise) {
+        var grad = ecgX.createLinearGradient(0, 0, W, 0);
+        grad.addColorStop(0,    'rgba('+cr+','+cg+','+cb+',0)');
+        grad.addColorStop(0.18, 'rgba('+cr+','+cg+','+cb+','+(alpha*0.25)+')');
+        grad.addColorStop(0.65, 'rgba('+cr+','+cg+','+cb+','+(alpha*0.72)+')');
+        grad.addColorStop(1,    'rgba('+cr+','+cg+','+cb+','+alpha+')');
+
+        ecgX.beginPath();
+        ecgX.strokeStyle = grad;
+        ecgX.lineWidth   = lw;
+        ecgX.lineJoin    = 'round'; ecgX.lineCap = 'round';
+        ecgX.shadowBlur  = alpha > 0.5 ? 16 : 0;
+        ecgX.shadowColor = 'rgb('+cr+','+cg+','+cb+')';
+
+        var phBeats = relBeats.filter(function(b){ return b.time < ph; });
+        var cur = startT;
+        ecgX.moveTo(toX(startT), baseY(startT));
+
+        for (var i = 0; i < phBeats.length; i++) {
+            var beat   = phBeats[i];
+            var time   = beat.time;
+            var pStart = time - 85;
+
+            /* Flat baseline to P-wave start */
+            if (cur < pStart) {
+                var steps = Math.max(2, Math.round((pStart - cur) / 22));
+                for (var j = 1; j <= steps; j++) {
+                    var tt = cur + (pStart - cur) * (j / steps);
+                    ecgX.lineTo(toX(tt), baseY(tt) + (addNoise ? noise() : 0));
+                }
+            }
+            var pby = baseY(pStart);
+            /* P wave */
+            ecgX.quadraticCurveTo(toX(time-48), pby-6.5, toX(time-18), pby+(addNoise?noise()*0.5:0));
+            /* PR segment */
+            ecgX.lineTo(toX(time), baseY(time)+(addNoise?noise()*0.4:0));
+
+            var by = baseY(time);
+            /* Q */
+            ecgX.lineTo(toX(time+8),  by + beat.q  * ECG_SCALE * 0.13 + (addNoise?noise():0));
+            /* R */
+            ecgX.lineTo(toX(time+20), by - beat.r  * ECG_SCALE        + (addNoise?noise()*0.18:0));
+            /* S */
+            ecgX.lineTo(toX(time+36), by + beat.s  * ECG_SCALE * 0.29 + (addNoise?noise():0));
+            /* ST segment */
+            ecgX.lineTo(toX(time+56), by+(addNoise?noise()*0.5:0));
+            ecgX.lineTo(toX(time+76), by+(addNoise?noise()*0.35:0));
+            /* T wave */
+            ecgX.quadraticCurveTo(
+                toX(time+76+beat.tW*0.5), by - beat.tA * ECG_SCALE,
+                toX(time+76+beat.tW),     by+(addNoise?noise()*0.3:0)
+            );
+            cur = time + 76 + beat.tW;
+        }
+
+        /* Tail to playhead */
+        if (cur < ph) {
+            var tailSteps = Math.max(2, Math.round((ph - cur) / 22));
+            for (var k = 1; k <= tailSteps; k++) {
+                var tt2 = cur + (ph - cur) * (k / tailSteps);
+                ecgX.lineTo(toX(tt2), baseY(tt2)+(addNoise?noise():0));
+            }
+        }
+        ecgX.stroke();
+        var clampPh = Math.min(ph, playhead);
+        return { lx: toX(clampPh), ly: baseY(clampPh) };
+    }
+
+    ecgX.clearRect(0, 0, W, H);
+    trace(playhead - 380, 0.11, 2.2, false);
+    var end = trace(playhead, 1.0, 4.8, true);
+
+    /* Comet dot */
+    ecgX.beginPath();
+    ecgX.arc(end.lx, end.ly, 3.8, 0, Math.PI*2);
+    ecgX.fillStyle  = 'rgba(255,255,255,0.95)';
+    ecgX.shadowBlur = 20; ecgX.shadowColor = 'white';
+    ecgX.fill();
+    ecgX.shadowBlur = 0;
+}
+
+/* ═══════════════════════════════════════════
+   MAIN LOOP
+═══════════════════════════════════════════ */
+function loop() {
+    var now = Date.now();
+    var rph = now - RENDER_DELAY;
+
+    displayRgb = lerpRgb(displayRgb, targetRgb, 0.038);
+
+    drawECG(rph);
+
+    /* Heart */
+    var sc   = heartScale(now);
+    var glow = Math.max(0, (sc-1)/0.3) * 18;
+    heartEl.style.transform = 'scale(' + sc.toFixed(3) + ')';
+    heartEl.style.filter    = 'drop-shadow(0 0 ' + glow.toFixed(1) + 'px currentColor)';
+
+    /* Particles */
+    pX.clearRect(0, 0, pC.width, pC.height);
+    var alive = [];
+    for (var pi = 0; pi < particles.length; pi++) {
+        var p = particles[pi];
+        p.tick();
+        if (p.life > 0) { p.draw(pX); alive.push(p); }
+    }
+    particles = alive;
+    pX.globalAlpha = 1;
+
+    drawSweeps();
+
+    timerEl.textContent = fmtTime(now - zoneStart);
+
+    /* Cleanup */
+    var cutoff = now - 13000;
+    beats    = beats.filter(function(b){ return b.time > cutoff; });
+    hrtTimes = hrtTimes.filter(function(t){ return now - t < 900; });
+
+    requestAnimationFrame(loop);
+}
+
+function fmtTime(ms) {
+    var s = Math.floor(ms / 1000);
+    return Math.floor(s/60) + ':' + ('0' + (s%60)).slice(-2);
+}
+
+/* ═══════════════════════════════════════════
+   TREND
+═══════════════════════════════════════════ */
+function getTrend() {
+    if (bpmHist.length < 7) return 'flat';
+    function avg(arr) { return arr.reduce(function(a,b){return a+b;},0)/arr.length; }
+    var rec = avg(bpmHist.slice(-3));
+    var old = avg(bpmHist.slice(-8,-4));
+    return rec - old > 4.5 ? 'up' : old - rec > 4.5 ? 'down' : 'flat';
+}
+
+/* ═══════════════════════════════════════════
+   WEBSOCKET
+═══════════════════════════════════════════ */
+function connect() {
+    var ws = new WebSocket('ws://localhost:8765');
+
+    ws.onmessage = function(ev) {
+        var d   = JSON.parse(ev.data);
+        var bpm = d.bpm;
+        var now = Date.now();
+
+        targetRgb = interpolateZoneColor(bpm);
+        var col  = toRgb(targetRgb);
+        var zi   = getZoneIdx(bpm);
+        var zone = ZONES[zi];
+
+        /* Zone change */
+        if (zi !== curZoneIdx) {
+            curZoneIdx = zi;
+            zoneStart  = now;
+            card.className = '';
+            var anim = ZONE_ANIMS[zone.id];
+            if (anim) card.classList.add(anim);
+            flashEl.style.background = col;
+            flashEl.style.opacity    = '0.24';
+            setTimeout(function(){ flashEl.style.opacity = '0'; }, 75);
+        }
+
+        if (!zoneHist.length || zoneHist[zoneHist.length-1] !== zi) {
+            zoneHist.push(zi);
+            if (zoneHist.length > 30) zoneHist.shift();
+            refreshDots();
+        }
+
+        bpmEl.textContent      = bpm;
+        bpmEl.style.color      = col;
+        zoneNameEl.textContent = zone.label;
+        zoneNameEl.style.color = col;
+        zoneDotEl.style.background = col;
+        heartEl.style.color    = col;
+        ringEl.style.color     = col;
+
+        bpmHist.push(bpm);
+        if (bpmHist.length > 22) bpmHist.shift();
+        var trend = getTrend();
+        trendEl.textContent = trend==='up' ? '\u2191' : trend==='down' ? '\u2193' : '\u2014';
+        trendEl.style.color = trend==='up' ? '#ff6055' : trend==='down' ? '#55aaff' : 'rgba(255,255,255,0.28)';
+
+        if (d.hrv != null) hrvEl.textContent = '\u00b7  ' + d.hrv + ' ms HRV';
+
+        loadFill.style.width      = zone.load + '%';
+        loadFill.style.background = col;
+
+        var r = Math.round(targetRgb[0]);
+        var g = Math.round(targetRgb[1]);
+        var b = Math.round(targetRgb[2]);
+        card.style.boxShadow   = '0 0 28px rgba('+r+','+g+','+b+',0.16), 0 8px 32px rgba(0,0,0,0.55)';
+        card.style.borderColor = 'rgba('+r+','+g+','+b+',0.22)';
+
+        /* Beats */
+        if (d.rrs && d.rrs.length > 0) {
+            var bt = now;
+            for (var i = d.rrs.length-1; i >= 0; i--) {
+                var isDup = false;
+                for (var j = 0; j < beats.length; j++) {
+                    if (Math.abs(beats[j].time - bt) < 28) { isDup = true; break; }
+                }
+                if (!isDup) {
+                    beats.push(Object.assign({ time: bt }, makeBeat()));
+                    var renderDelay = Math.max(0, bt + RENDER_DELAY - now);
+                    (function(snapCol, delay) {
+                        setTimeout(function() {
+                            hrtTimes.push(Date.now());
+                            emitSweep(snapCol);
+                            var hw = document.getElementById('heart-wrap');
+                            var cx = hw.offsetLeft + hw.offsetWidth  / 2;
+                            var cy = hw.offsetTop  + hw.offsetHeight / 2;
+                            burst(cx, cy, snapCol, 12);
+                            ringEl.classList.remove('pulse');
+                            void ringEl.offsetWidth;
+                            ringEl.classList.add('pulse');
+                        }, delay);
+                    }(col, renderDelay));
+                }
+                bt -= d.rrs[i] * 1000;
+            }
+        }
+        beats = beats.filter(function(b){ return b.time > now - 13000; });
+    };
+
+    ws.onclose = function() {
+        zoneNameEl.textContent = 'RECONNECTING';
+        zoneNameEl.style.color = 'rgba(255,255,255,0.35)';
+        setTimeout(connect, 2000);
+    };
+    ws.onerror = function() { ws.close(); };
+}
+
+/* ═══════════════════════════════════════════
+   BOOT
+═══════════════════════════════════════════ */
+resize();
+refreshDots();
+connect();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
