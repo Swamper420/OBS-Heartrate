@@ -63,10 +63,8 @@
 
 <script>
 /* ═══════════════════════════════════════════
-   CONFIG & ZONES
+   HR ZONES & COLOR INTERPOLATION
 ═══════════════════════════════════════════ */
-const RENDER_DELAY = 1500; // Delay to sync pulses with incoming stream timeline
-
 const ZONES = [
     { min: 0,   max: 60,  rgb: [75, 185, 255] },  // Rest (Cool Blue)
     { min: 60,  max: 90,  rgb: [0, 215, 255]  },  // Easy (Cyan)
@@ -76,24 +74,15 @@ const ZONES = [
     { min: 160, max: 999, rgb: [255, 0, 50]   }   // Max (Intense Red)
 ];
 
-/* ═══════════════════════════════════════════
-   STATE
-═══════════════════════════════════════════ */
-let displayRgb = [140, 150, 170];
-let targetRgb  = [140, 150, 170];
-let pulse      = 0.0;
-let lastTime   = Date.now();
-let beats      = [];
+let displayRgb   = [140, 150, 170];
+let targetRgb    = [140, 150, 170];
+let pulse        = 0.0;
+let lastTime     = Date.now();
+let lastDataTime = Date.now();
 
-/* ═══════════════════════════════════════════
-   DOM REFS
-═══════════════════════════════════════════ */
 const bpmEl  = document.getElementById('bpm-value');
 const unitEl = document.getElementById('bpm-unit');
 
-/* ═══════════════════════════════════════════
-   COLOR HELPERS
-═══════════════════════════════════════════ */
 function lerpRgb(from, to, t) {
     return from.map((v, i) => v + (to[i] - v) * t);
 }
@@ -127,13 +116,12 @@ function loop() {
     const dt = Math.min((now - lastTime) / 1000, 0.1);
     lastTime = now;
 
-    // Decay pulse intensity smoothly (half-life ~200ms)
+    // Decay pulse intensity smoothly
     pulse = Math.max(0, pulse - dt * 3.5);
 
-    // Smoothly interpolate display color toward zone color
+    // Interpolate display color toward zone color
     displayRgb = lerpRgb(displayRgb, targetRgb, 0.05);
 
-    // Compute pulse flash color (shifts toward bright white glow on pulse)
     const pFactor = Math.pow(pulse, 0.7);
     const curRgb = [
         Math.min(255, displayRgb[0] + (255 - displayRgb[0]) * pFactor * 0.95),
@@ -142,10 +130,8 @@ function loop() {
     ];
 
     const baseColStr = toRgb(curRgb);
-    
-    // Dynamic text shadow glow expanding on beat pulse
-    const innerGlow   = Math.round(12 + pFactor * 35);
-    const outerGlow   = Math.round(25 + pFactor * 65);
+    const innerGlow  = Math.round(12 + pFactor * 35);
+    const outerGlow  = Math.round(25 + pFactor * 65);
     const glowOpacity = (0.4 + pFactor * 0.5).toFixed(2);
     
     const zoneGlowStr  = toRgb(displayRgb, glowOpacity);
@@ -165,38 +151,26 @@ function loop() {
 /* ═══════════════════════════════════════════
    WEBSOCKET
 ═══════════════════════════════════════════ */
+setInterval(() => {
+    // Reset display if signal lost / off-body for > 5 seconds
+    if (Date.now() - lastDataTime > 5000) {
+        bpmEl.textContent = '--';
+        targetRgb = [140, 150, 170];
+    }
+}, 1000);
+
 function connect() {
     const ws = new WebSocket('ws://localhost:8765');
 
     ws.onmessage = function(ev) {
         const d   = JSON.parse(ev.data);
         const bpm = d.bpm;
-        const now = Date.now();
+        if (!bpm || bpm <= 0) return;
 
+        lastDataTime = Date.now();
         targetRgb = interpolateZoneColor(bpm);
         bpmEl.textContent = bpm;
-
-        /* Beat Pulses */
-        if (d.rrs && d.rrs.length > 0) {
-            let bt = now;
-            for (let i = d.rrs.length - 1; i >= 0; i--) {
-                let isDup = false;
-                for (let j = 0; j < beats.length; j++) {
-                    if (Math.abs(beats[j] - bt) < 28) { isDup = true; break; }
-                }
-                if (!isDup) {
-                    beats.push(bt);
-                    const renderDelay = Math.max(0, bt + RENDER_DELAY - now);
-                    setTimeout(triggerPulse, renderDelay);
-                }
-                bt -= d.rrs[i] * 1000;
-            }
-        } else {
-            // Fallback pulse if no RR intervals present
-            triggerPulse();
-        }
-
-        beats = beats.filter(t => t > now - 13000);
+        triggerPulse();
     };
 
     ws.onclose = function() {
