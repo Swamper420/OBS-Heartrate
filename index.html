@@ -24,33 +24,21 @@
 
         #overlay-container {
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: center;
-            gap: 14px;
             user-select: none;
             padding: 20px;
         }
 
         #bpm-value {
-            font-size: 160px;
+            font-size: 180px;
             font-weight: 900;
-            line-height: 0.9;
+            line-height: 1.0;
             font-variant-numeric: tabular-nums;
             letter-spacing: -4px;
             color: rgba(255, 255, 255, 0.4);
             will-change: color, text-shadow;
             filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.6));
-        }
-
-        #bpm-unit {
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            color: rgba(255, 255, 255, 0.35);
-            align-self: flex-end;
-            margin-bottom: 16px;
-            transition: color 0.6s ease;
         }
     </style>
 </head>
@@ -58,7 +46,6 @@
 
 <div id="overlay-container">
     <span id="bpm-value">--</span>
-    <span id="bpm-unit">BPM</span>
 </div>
 
 <script>
@@ -80,8 +67,7 @@ let pulse        = 0.0;
 let lastTime     = Date.now();
 let lastDataTime = Date.now();
 
-const bpmEl  = document.getElementById('bpm-value');
-const unitEl = document.getElementById('bpm-unit');
+const bpmEl = document.getElementById('bpm-value');
 
 function lerpRgb(from, to, t) {
     return from.map((v, i) => v + (to[i] - v) * t);
@@ -143,8 +129,6 @@ function loop() {
         0 0 ${outerGlow}px ${zoneGlowStr}
     `;
 
-    unitEl.style.color = toRgb(displayRgb, 0.4);
-
     requestAnimationFrame(loop);
 }
 
@@ -152,7 +136,7 @@ function loop() {
    WEBSOCKET
 ═══════════════════════════════════════════ */
 setInterval(() => {
-    // Reset display if signal lost / off-body for > 5 seconds
+    // Reset display to '--' if no HR signal for > 5 seconds
     if (Date.now() - lastDataTime > 5000) {
         bpmEl.textContent = '--';
         targetRgb = [140, 150, 170];
